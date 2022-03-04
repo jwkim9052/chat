@@ -61,7 +61,8 @@ class TextSocketWorker(QThread):
         super(TextSocketWorker, self).__init__()
         #self.IP = '127.0.0.1'
         # This is my aws server
-        self.IP = '18.204.222.197'
+        #self.IP = '18.204.222.197'
+        self.IP = '220.149.231.128'
         self.PORT = 5000
         self.my_username = username
         self.sock_setup()

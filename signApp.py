@@ -8,6 +8,7 @@ import socket
 import errno
 import time
 import os
+import platform
 
 class UI(QMainWindow):
     def __init__(self):
@@ -25,12 +26,10 @@ class UI(QMainWindow):
         self.stopButton = self.findChild(QPushButton, "stopButton")
 
         self.usernameLabel.setText("Username : " + self.my_username)
-        # Do something with Event
-        # self.button.clicked.connect(self.clicker)
-        # def clicker():
-        #   do something
+
         self.recordingWorker = RecordingWorker()
         self.recordingWorker.ImageUpdate.connect(self.ImageUpdateSlot)
+        self.recordingWorker.finished.connect(self.threadFinished)
         self.playWorker = PlayWorker()
         self.playWorker.ImageUpdate.connect(self.ImageUpdateSlotForRecvFile)
         self.startButton.clicked.connect(self.startRecording)
@@ -42,18 +41,20 @@ class UI(QMainWindow):
 
         self.show()
 
+    def threadFinished(self):
+        # too many event has fired from QThread. 
+        print("===== check that the thread has just finished == for debug purpose")
+
     def MessageUpdateSlot(self, message):
         self.usernameLabel.setText( message + " => " + self.my_username)
 
-        if not self.playWorker.isRunning():
-            print("=======================================================================")
-            print(" true or false ")
-            print(self.playWorker.isRunning())
+        if not self.playWorker.is_running():
+            print("Playing a new arrived video message")
+            print(self.playWorker.is_running())
             self.playWorker.start()
         else:
-            print("Ding ...")
+            print("New Message has arrived but I am busy to play the previous one ...")
 
-        # need to improve the followings... I think ....another thread needed.
     def ImageUpdateSlot(self, image):
         self.sendLabel.setPixmap(QPixmap.fromImage(image))
 
@@ -62,19 +63,21 @@ class UI(QMainWindow):
 
     def startRecording(self):
         self.usernameLabel.setText(self.my_username)
-        if not self.recordingWorker.isRunning():
+        if not self.recordingWorker.is_running():
             self.recordingWorker.start()
         else:
             print("Ding ...")
-        
+
     def stopRecording(self):
-        if self.recordingWorker.isRunning():
+        if self.recordingWorker.is_running():
             self.recordingWorker.stop()
             time.sleep(0.5)
             self.fileSocketWorker.send_file(self.recordingWorker.getRecordingFilename())
+        else:
+            print("Dong ...")
 
     def closeEvent(self, event):
-        if self.recordingWorker.isRunning():
+        if self.recordingWorker.is_running():
             self.recordingWorker.stop()
 
 
@@ -88,7 +91,8 @@ class FileSocketWorker(QThread):
         super(FileSocketWorker, self).__init__()
         #self.IP = '127.0.0.1'
         # my aws server
-        self.IP = '18.204.222.197'
+        #self.IP = '18.204.222.197'
+        self.IP = '220.149.231.128'
         self.PORT = 5001
         self.my_username = username
         self.sock_setup()
@@ -107,16 +111,14 @@ class FileSocketWorker(QThread):
         # buffer_size = 2048
         filesize = os.path.getsize(filename)
         sFilesize = str(filesize)
-        print(sFilesize, "what the hell")
         message_header = f"{sFilesize:>{HEADER_LENGTH}}".encode(FMT)
-        #message_header.encode('utf-8')
-        print(message_header)
+        #print(message_header)
         file_contents = None
         self.client_socket.send(message_header)
         with open(filename, 'rb') as readFile:
             file_contents = readFile.read()
         self.client_socket.send(file_contents)
-        
+
     def send_message(self, send_string):
         if send_string:
             message = send_string.encode(FMT)
@@ -124,53 +126,34 @@ class FileSocketWorker(QThread):
             self.client_socket.send(message_header + message)
 
     def run(self): # receive data from server
-        print("Thread has just started...")
+        print("FileSocketWorker Thread has just started...")
         while True:
             try:
                 while True:
                     # receive things. sever always send username and message
                     username_header = self.client_socket.recv(HEADER_LENGTH)
                     # if sock is nonblocking and there is nodata in the recv buffer, it goes to IOError.
-                    print("check point 1")
                     if not len(username_header):
                         print("connection closed by the server")
                         sys.exit()
-                    print("check point 2")
                     username_length = int(username_header.decode(FMT).strip())
                     username = self.client_socket.recv(username_length).decode(FMT)
 
-                    print("check point 3")
                     message_header = self.client_socket.recv(HEADER_LENGTH)
                     message_length = int(message_header.decode(FMT).strip())
                     print(f"filezise = {message_length}")
                     #contents = self.client_socket.recv(message_length)
                     #print(len(contents))
 
-                    print("check point 4")
-                    filename = 'default_client.avi'
+                    filename = 'default_client.mp4'
                     buffer_size = 2048
                     with open(filename, 'wb') as writeFile:
                         while message_length != 0:
                             video_chunk = self.client_socket.recv(buffer_size)
                             message_length -= len(video_chunk)
                             writeFile.write(video_chunk)
-                        """
-                        while True:
-                            if message_length <= buffer_size:
-                                video_chunk = self.client_socket.recv(message_length)
-                                writeFile.write(video_chunk)
-                                print(f"remaining bytes = {message_length} received")
-                                break
-                            video_chunk = self.client_socket.recv(buffer_size)
-                            writeFile.write(video_chunk)
-                            message_length -= buffer_size
-                            #print(f"remaining bytes = {message_length}")
-                        """
-
-                    #print("check point 5")
                     # event fire
                     self.MessageUpdate.emit(username)
-                    #print("check point 6")
             except IOError as e: # if client_socket set nonblocking, IOError will be executed.
                 if e.errno != errno.EAGAIN and e.errno != errno.EWOULDBLOCK:
                     print('Reading error', str(e))
@@ -188,7 +171,9 @@ class RecordingWorker(QThread):
     def __init__(self):
         super(RecordingWorker, self).__init__()
         self.ThreadActive = False
-        self.recordingFilename = 'chat_video.avi'
+        self.recordingFilename = 'chat_video.mp4'
+        self.frames = []
+        self.is_windows = any(platform.win32_ver())
 
     def setRecordingFilename(self, filename):
         self.recordingFilename = filename
@@ -198,14 +183,24 @@ class RecordingWorker(QThread):
 
     def run(self):
         self.ThreadActive = True
-        self.Capture = cv2.VideoCapture(0)
-        fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+        if self.is_windows:
+            self.Capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            print("Windows.. cv2.VideoCapture(0, cv2.CAP_DSHOW)")
+        else:
+            self.Capture = cv2.VideoCapture(0)
+        self.frames = []
+        #fourcc = cv2.VideoWriter_fourcc(*'DIVX')
         # VideoWriter filename, codec, frame rate = 30, size
-        self.out = cv2.VideoWriter(self.recordingFilename, fourcc, 20.0, (640,480))
+        fps = 30.0
+        #self.out = cv2.VideoWriter(self.recordingFilename, fourcc, fps, (640,480))
+        frame_count = 1
         while self.ThreadActive:
+            now = time.time()
             ret, frame = self.Capture.read()
-            self.out.write(frame)
             if ret:
+                #self.out.write(frame)
+                self.frames.append(frame)
+                frame_count += 1
                 Image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = Image.shape
                 bytes_per_line = ch * w
@@ -214,17 +209,35 @@ class RecordingWorker(QThread):
                 ConvertToQtFormat = QImage(Image.data, w, h, bytes_per_line, QImage.Format_RGB888)
                 Pic = ConvertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
                 self.ImageUpdate.emit(Pic)
+            else:
+                print("debug purpose for Capture and write")
+            timeDiff = time.time() - now
+            if(timeDiff < 1.0/(fps)):
+                time.sleep(1.0/(fps) - timeDiff)
         else:
-            self.Capture.release()
-            self.out.release()
             filesize = os.path.getsize(self.recordingFilename)
-            print("out.release and video file size = {filesize}")
+            print(f"out.release and video file size = {filesize} frame count = {frame_count}")
 
     def stop(self):
+        # the order very important...
+        self.Capture.release()
+
+        ### writing frames to file
+        #fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+        #fourcc = cv2.VideoWriter_fourcc(*'MP4V') Opencv:ffmpeg does not support MP4V.... in which i am coding.
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = 30.0
+        self.out = cv2.VideoWriter(self.recordingFilename, fourcc, fps, (640,480))
+
+        for frame in self.frames:
+            self.out.write(frame)
+        ### the end of writing frames
+        self.out.release()
+
         self.ThreadActive = False
         self.quit()
 
-    def isRunning(self):
+    def is_running(self):
         return self.ThreadActive
 
 
@@ -234,7 +247,7 @@ class PlayWorker(QThread):
     def __init__(self):
         super(PlayWorker, self).__init__()
         self.ThreadActive = False
-        self.playFilename = 'default_client.avi'
+        self.playFilename = 'default_client.mp4'
 
     def setPlayFilename(self, filename):
         self.playFilename = filename
@@ -243,15 +256,13 @@ class PlayWorker(QThread):
         return self.playFilename
 
     def run(self):
-        #filename = 'default_client.avi'
+        print("PlayWorker Thread has just started to play the Video ")
         self.Capture = cv2.VideoCapture(self.playFilename)
-        print("Start to play the Video ")
         fps = self.Capture.get(cv2.CAP_PROP_FPS)
 
         self.ThreadActive = True
         while self.ThreadActive:
             ret, frame = self.Capture.read()
-            #self.out.write(frame)
             if ret:
                 now = time.time()
 
@@ -270,17 +281,15 @@ class PlayWorker(QThread):
             else:
                 self.ThreadActive = False
         else:
-            self.Capture.release()
-            #self.out.release()
             filesize = os.path.getsize(self.playFilename)
             print(f"out.release and video file size = {filesize}")
-            self.quit()
 
     def stop(self):
         self.ThreadActive = False
+        self.Capture.release()
         self.quit()
 
-    def isRunning(self):
+    def is_running(self):
         return self.ThreadActive
 
 # Initialize the App

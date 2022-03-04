@@ -7,7 +7,8 @@ HEADER_LENGTH = 32
 FMT = "utf-8"
 
 #IP = "127.0.0.1"
-IP = "172.31.40.194"
+#IP = "172.31.40.194"
+IP = "220.149.231.128"
 PORT = 5000
 PORT2= 5001
 
@@ -83,7 +84,7 @@ while True:
             user = receive_message(client_socket)
 
             if user is False:
-                print("what ? ###############1")
+                print(f"what ? ###############{client_address[0]}:{client_address[1]}")
                 continue
 
             sockets_list.append(client_socket)
@@ -97,7 +98,7 @@ while True:
             user = receive_message(client_socket)
 
             if user is False:
-                print("what ? ###############1")
+                print(f"what ? ###############{client_address[0]}:{client_address[1]}")
                 continue
 
             sockets_list.append(client_socket)
