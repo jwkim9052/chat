@@ -9,6 +9,7 @@ import errno
 import time
 import os
 import platform
+from datetime import datetime
 
 class UI(QMainWindow):
     def __init__(self):
@@ -51,6 +52,12 @@ class UI(QMainWindow):
         if not self.playWorker.is_running():
             print("Playing a new arrived video message")
             print(self.playWorker.is_running())
+            now = datetime.now()
+            now_str = now.strftime("%Y%m%d%H%M%S")
+            new_filename = f"{message}_{now_str}.mp4"
+            os.rename("default_client.mp4", new_filename)
+            
+            self.playWorker.setPlayFilename(new_filename)
             self.playWorker.start()
         else:
             print("New Message has arrived but I am busy to play the previous one ...")
@@ -173,6 +180,13 @@ class RecordingWorker(QThread):
         self.ThreadActive = False
         self.recordingFilename = 'chat_video.mp4'
         self.frames = []
+        #self.recordingWidth = 1920
+        #self.recordingHeight = 1080
+        self.recordingWidth = 1280
+        self.recordingHeight = 720
+        #self.recordingWidth = 640
+        #self.recordingHeight = 480
+        self.fps = 30
         self.is_windows = any(platform.win32_ver())
 
     def setRecordingFilename(self, filename):
@@ -188,17 +202,17 @@ class RecordingWorker(QThread):
             print("Windows.. cv2.VideoCapture(0, cv2.CAP_DSHOW)")
         else:
             self.Capture = cv2.VideoCapture(0)
+        # change resolution to 1080p for recording 
+        self.Capture.set(3, self.recordingWidth)
+        self.Capture.set(4, self.recordingHeight)
+
         self.frames = []
-        #fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-        # VideoWriter filename, codec, frame rate = 30, size
-        fps = 30.0
-        #self.out = cv2.VideoWriter(self.recordingFilename, fourcc, fps, (640,480))
+        #fps = 30.0
         frame_count = 1
         while self.ThreadActive:
             now = time.time()
             ret, frame = self.Capture.read()
             if ret:
-                #self.out.write(frame)
                 self.frames.append(frame)
                 frame_count += 1
                 Image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -211,9 +225,9 @@ class RecordingWorker(QThread):
                 self.ImageUpdate.emit(Pic)
             else:
                 print("debug purpose for Capture and write")
-            timeDiff = time.time() - now
-            if(timeDiff < 1.0/(fps)):
-                time.sleep(1.0/(fps) - timeDiff)
+            #timeDiff = time.time() - now
+            #if(timeDiff < 1.0/(self.fps)):
+            #    time.sleep(1.0/(self.fps) - timeDiff)
         else:
             filesize = os.path.getsize(self.recordingFilename)
             print(f"out.release and video file size = {filesize} frame count = {frame_count}")
@@ -225,9 +239,10 @@ class RecordingWorker(QThread):
         ### writing frames to file
         #fourcc = cv2.VideoWriter_fourcc(*'DIVX')
         #fourcc = cv2.VideoWriter_fourcc(*'MP4V') Opencv:ffmpeg does not support MP4V.... in which i am coding.
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        fps = 30.0
-        self.out = cv2.VideoWriter(self.recordingFilename, fourcc, fps, (640,480))
+        #fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        #fps = 30.0
+        self.out = cv2.VideoWriter(self.recordingFilename, fourcc, self.fps, (self.recordingWidth,self.recordingHeight))
 
         for frame in self.frames:
             self.out.write(frame)
@@ -282,7 +297,7 @@ class PlayWorker(QThread):
                 self.ThreadActive = False
         else:
             filesize = os.path.getsize(self.playFilename)
-            print(f"out.release and video file size = {filesize}")
+            print(f"PlayWorker Thread ended : video file size = {filesize}")
 
     def stop(self):
         self.ThreadActive = False

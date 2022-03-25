@@ -2,6 +2,7 @@ import socket
 import select
 import time
 import os
+from datetime import datetime
 
 HEADER_LENGTH = 32
 FMT = "utf-8"
@@ -42,7 +43,9 @@ def receive_bytes(client_socket):
 
         user = clients2[notified_socket]
         print(f"the sender is {user['data'].decode(FMT)}")
-        filename = user['data'].decode(FMT) + "_srv_tmp.avi"
+        now = datetime.now()
+        now_str = now.strftime("%Y%m%d%H%M%S")
+        filename = user['data'].decode(FMT) + "_" + now_str + ".mp4"
 
         video_file = open(filename, 'wb')
 
@@ -75,7 +78,8 @@ def receive_message(client_socket):
         return False
 
 while True:
-    read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
+    #read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
+    read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list, 1)
 
     for notified_socket in read_sockets:
         if notified_socket == server_socket:
@@ -105,6 +109,7 @@ while True:
             clients2[client_socket] = user
             print(clients2[client_socket])
             print(f"Accepted new connection from {client_address[0]}:{client_address[1]} username:{user['data'].decode(FMT)}")
+# Text user send something #########################################################
         elif notified_socket in clients:
             print("Text User sent a message")
             message = receive_message(notified_socket)
@@ -138,6 +143,7 @@ while True:
                     client_socket.send(msg_header)
                     client_socket.send(file_contents)
 
+# Sign user send something #########################################################
         elif notified_socket in clients2:
             print("Sign Language User sent a video content")
             msg_file = receive_bytes(notified_socket)
