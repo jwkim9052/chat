@@ -2,7 +2,9 @@ import socket
 import select
 import time
 import os
+from signjoey.prediction import test
 from datetime import datetime
+import threading
 
 HEADER_LENGTH = 32
 FMT = "utf-8"
@@ -29,6 +31,30 @@ sockets_list = [server_socket, server_socket2]
 clients = {}
 clients2 = {}
 
+DATA_DIR = "./chat_data/"
+
+def send_text_from_video(clients, notified_socket, username, filename):
+    print("Start a thread")
+    user_header = f"{len(username):<{HEADER_LENGTH}}".encode(FMT)
+    #username = username.encode(FMT)
+    message_header = f"{len(filename):<{HEADER_LENGTH}}".encode(FMT)
+    #filename = filename.encode(FMT)
+    print(f"{filename.decode(FMT)} in thread")
+    result = test(sign_data_path = filename.decode(FMT) , cfg_file="./configs/sign_3.yaml" )
+    print("======================== Kevin ==========================")
+    print(result)
+    print("=========================================================")
+    result=result.strip().encode(FMT)
+    message_header = f"{len(result):<{HEADER_LENGTH}}".encode(FMT)
+    print("======================== Kevin ==========================")
+    print(result, message_header)
+    print("=========================================================")
+
+    for client_socket in clients:
+        if client_socket != notified_socket:
+            client_socket.send(user_header+username+message_header+result)
+
+    print("end a thread")
 
 def receive_bytes(client_socket):
     try:
@@ -45,7 +71,7 @@ def receive_bytes(client_socket):
         print(f"the sender is {user['data'].decode(FMT)}")
         now = datetime.now()
         now_str = now.strftime("%Y%m%d%H%M%S")
-        filename = user['data'].decode(FMT) + "_" + now_str + ".mp4"
+        filename = DATA_DIR + user['data'].decode(FMT) + "_" + now_str + ".mp4"
 
         video_file = open(filename, 'wb')
 
@@ -129,7 +155,7 @@ while True:
 
             for client_socket in clients2:
                 if client_socket != notified_socket:
-                    filename = 'default_animation.avi'
+                    filename = DATA_DIR+'default_animation.avi'
                     default_file_size = os.path.getsize(filename)
                     sFilesize = str(default_file_size)
                     #print(f"file size = {sFilesize}")
@@ -161,7 +187,7 @@ while True:
                 if client_socket != notified_socket:
                     #client_socket.send(user['header']+user['data']+message['header']+message['data'])
                     client_socket.send(user['header']+user['data'])
-                    filename = msg_file['filename']
+                    filename = msg_file['filename'].decode(FMT)
 
                     video_file = open(filename,'rb')
                     message_length = int(msg_file['header'].decode(FMT).strip())
@@ -172,11 +198,15 @@ while True:
                     client_socket.send(video_contents)
 
             filename = msg_file['filename']
-            message_header = f"{len(filename) : <{HEADER_LENGTH}}".encode(FMT)
+            username = user['data']
+            t = threading.Thread(target=send_text_from_video, args=(clients, notified_socket, username, filename))
+            t.start()
+            #send_text_from_video(clients, notified_socket, username, filename)
+            #message_header = f"{len(filename) : <{HEADER_LENGTH}}".encode(FMT)
 
-            for client_socket in clients:
-                if client_socket != notified_socket:
-                    client_socket.send(user['header']+user['data']+message_header+filename)
+            #for client_socket in clients:
+            #    if client_socket != notified_socket:
+            #        client_socket.send(user['header']+user['data']+message_header+filename)
 
     for notified_socket in exception_sockets:
         sockets_list.remove(notified_socket)
